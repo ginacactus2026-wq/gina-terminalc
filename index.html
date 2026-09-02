@@ -1,0 +1,2438 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CONTPAQi® Bancos - Control de Pólizas, Tesorería y Dashboard Ejecutivo</title>
+    <!-- Librería SheetJS para lectura directa de .xlsx con fallback -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script>
+        if (typeof XLSX === 'undefined') {
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"><\/script>');
+        }
+    </script>
+    <!-- Chart.js para las gráficas del Dashboard Ejecutivo, con respaldo -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script>
+        if (typeof Chart === 'undefined') {
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"><\/script>');
+        }
+    </script>
+    <style>
+        :root {
+            --cpq-header: #1b365d;
+            --cpq-header-dark: #12243f;
+            --cpq-accent: #2e6da4;
+            --cpq-bg: #eceff1;
+            --cpq-panel-bg: #ffffff;
+            --cpq-border: #90a4ae;
+            --cpq-border-light: #cfd8dc;
+            --cpq-text: #263238;
+            --cpq-text-muted: #546e7a;
+            --cpq-grid-header: #37474f;
+            --cpq-grid-hover: #e0f2fe;
+            --cpq-zebra: #f8fafc;
+            --cpq-danger: #c62828;
+            --cpq-success: #2e7d32;
+            --cpq-warning: #e65100;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 11.5px;
+        }
+
+        body {
+            background-color: var(--cpq-bg);
+            color: var(--cpq-text);
+            padding: 6px 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .window-header {
+            background: linear-gradient(180deg, var(--cpq-header) 0%, var(--cpq-header-dark) 100%);
+            color: #ffffff;
+            padding: 5px 10px;
+            border-radius: 3px 3px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border: 1px solid var(--cpq-header-dark);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
+        }
+
+        .window-header h1 {
+            font-size: 12.5px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .nav-tabs {
+            display: flex;
+            gap: 3px;
+            border-bottom: 2px solid var(--cpq-accent);
+            padding-left: 4px;
+            background: #d5dce0;
+            padding-top: 3px;
+            border-radius: 2px 2px 0 0;
+        }
+
+        .nav-tab {
+            padding: 5px 14px;
+            background: #b0bec5;
+            color: #263238;
+            border: 1px solid var(--cpq-border);
+            border-bottom: none;
+            border-radius: 3px 3px 0 0;
+            cursor: pointer;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .nav-tab.active {
+            background: var(--cpq-panel-bg);
+            color: var(--cpq-accent);
+            border-top: 3px solid var(--cpq-accent);
+            border-bottom: 1px solid #fff;
+            margin-bottom: -2px;
+        }
+
+        .tab-badge {
+            background: var(--cpq-danger);
+            color: white;
+            padding: 1px 6px;
+            border-radius: 10px;
+            font-size: 10px;
+        }
+
+        .summary-bar {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 6px;
+        }
+
+        .summary-card {
+            background: var(--cpq-panel-bg);
+            border: 1px solid var(--cpq-border);
+            padding: 4px 8px;
+            border-radius: 2px;
+        }
+
+        .summary-card .title {
+            font-size: 9.5px;
+            text-transform: uppercase;
+            font-weight: bold;
+            color: var(--cpq-text-muted);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .summary-card .amount {
+            font-size: 14px;
+            font-weight: 800;
+            font-family: 'Consolas', monospace;
+            text-align: right;
+        }
+
+        .amount.mxn { color: #0d47a1; }
+        .amount.usd { color: #1b5e20; }
+
+        .tab-content {
+            display: none;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .tab-content.active {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .panel {
+            background: var(--cpq-panel-bg);
+            border: 1px solid var(--cpq-border);
+            border-radius: 2px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .panel-header {
+            background: linear-gradient(180deg, #eceff1 0%, #cfd8dc 100%);
+            padding: 5px 8px;
+            font-weight: bold;
+            color: #37474f;
+            border-bottom: 1px solid var(--cpq-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11px;
+            text-transform: uppercase;
+        }
+
+        .panel-body {
+            padding: 10px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+        .form-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+        .form-row-btn { display: grid; grid-template-columns: 1fr auto; gap: 4px; align-items: flex-end; }
+
+        label { font-weight: 600; color: #37474f; font-size: 10.5px; }
+        label span.req { color: var(--cpq-danger); }
+
+        input, select, textarea {
+            border: 1px solid #78909c;
+            border-radius: 2px;
+            padding: 4px 6px;
+            background: #fff;
+            color: #263238;
+            outline: none;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            border-color: var(--cpq-accent);
+            background: #fffde7;
+        }
+
+        .toolbar {
+            background: #e2e8f0;
+            padding: 4px 8px;
+            border-bottom: 1px solid var(--cpq-border);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .toolbar-group {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        button, .btn {
+            background: linear-gradient(180deg, #f5f5f5 0%, #cfd8dc 100%);
+            border: 1px solid #78909c;
+            padding: 4px 10px;
+            font-weight: 600;
+            cursor: pointer;
+            border-radius: 2px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            color: #263238;
+            box-shadow: inset 0 1px 0 #fff;
+        }
+
+        button:hover { background: linear-gradient(180deg, #ffffff 0%, #b0bec5 100%); border-color: #546e7a; }
+        button.btn-primary { background: linear-gradient(180deg, #2e6da4 0%, #1b365d 100%); color: white; border-color: #12243f; }
+        button.btn-success { background: linear-gradient(180deg, #43a047 0%, #2e7d32 100%); color: white; border-color: #1b5e20; }
+        button.btn-danger { background: linear-gradient(180deg, #e53935 0%, #b71c1c 100%); color: white; border-color: #7f0000; }
+        button.btn-sm { padding: 2px 5px; font-size: 10px; }
+
+        .grid-container {
+            flex: 1;
+            overflow: auto;
+            background: #fff;
+        }
+
+        table.cpq-grid {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+            white-space: nowrap;
+        }
+
+        table.cpq-grid thead {
+            position: sticky;
+            top: 0;
+            background: var(--cpq-grid-header);
+            color: #ffffff;
+            z-index: 2;
+        }
+
+        table.cpq-grid th {
+            padding: 4px 6px;
+            text-align: left;
+            border-right: 1px solid #546e7a;
+            border-bottom: 2px solid #263238;
+            font-weight: 600;
+            font-size: 10px;
+        }
+
+        table.cpq-grid td {
+            padding: 3px 6px;
+            border-right: 1px solid #e0e0e0;
+            border-bottom: 1px solid var(--cpq-border-light);
+        }
+
+        table.cpq-grid tbody tr:nth-child(even) { background-color: var(--cpq-zebra); }
+        table.cpq-grid tbody tr:hover { background-color: var(--cpq-grid-hover); }
+        table.cpq-grid tbody tr.selected-row { background-color: #fff9c4 !important; }
+
+        .text-right { text-align: right; }
+        .text-center { text-align: center; }
+
+        .badge {
+            padding: 1px 4px;
+            border-radius: 2px;
+            font-size: 9px;
+            font-weight: 700;
+            text-transform: uppercase;
+            display: inline-block;
+        }
+        .badge-ingreso { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+        .badge-egreso { background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; }
+        .badge-comision { background: #fff3e0; color: #e65100; border: 1px solid #ffcc80; }
+        .badge-traspaso { background: #e1f5fe; color: #0277bd; border: 1px solid #81d4fa; }
+        .badge-obj { background: #ede7f6; color: #512da8; border: 1px solid #d1c4e9; font-weight: bold; }
+        .badge-mxn { background: #e3f2fd; color: #1565c0; font-weight: bold; }
+        .badge-usd { background: #e8f5e9; color: #2e7d32; font-weight: bold; }
+
+        /* Dashboard Styles */
+        .dash-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .dash-card {
+            background: #fff;
+            border: 1px solid var(--cpq-border);
+            border-radius: 3px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .dash-card-header {
+            background: #f1f5f9;
+            border-bottom: 1px solid var(--cpq-border-light);
+            padding: 6px 10px;
+            font-weight: bold;
+            color: #1e293b;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .dash-card-body {
+            padding: 10px;
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            border-bottom: 1px dashed #cfd8dc;
+        }
+
+        .stat-row:last-child {
+            border-bottom: none;
+        }
+
+        .progress-bar-bg {
+            background: #e2e8f0;
+            height: 6px;
+            border-radius: 3px;
+            margin-top: 4px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: var(--cpq-accent);
+            border-radius: 3px;
+        }
+
+        /* Hero Upload Box */
+        .upload-hero {
+            border: 2px dashed #455a64;
+            background: #f8fafc;
+            border-radius: 6px;
+            padding: 26px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin: 10px 0;
+        }
+
+        .upload-hero:hover, .upload-hero.dragover {
+            border-color: var(--cpq-accent);
+            background: #e0f2fe;
+        }
+
+        /* Modales */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.65);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal {
+            background: #fff;
+            border: 2px solid var(--cpq-header);
+            border-radius: 3px;
+            box-shadow: 0 4px 25px rgba(0,0,0,0.45);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-header {
+            background: var(--cpq-header);
+            color: white;
+            padding: 7px 12px;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+        .modal-footer {
+            background: #eceff1;
+            padding: 8px 14px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 6px;
+            border-top: 1px solid #cfd8dc;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="window-header">
+        <h1><span>💼</span> CONTPAQi® Bancos - Control Integral de Pólizas, Tesorería y Dashboard</h1>
+        <div style="display:flex; align-items:center; gap:10px;">
+            <div style="font-size: 11px; opacity: 0.9;">Generación Automática de Pólizas | Control Antiduplicados Activo</div>
+            <button type="button" class="btn-success btn-sm" onclick="generarYDescargarHTML()" title="Descarga una copia completa de esta aplicación con todas las pólizas ya cargadas">
+                💾 Generar y Descargar HTML
+            </button>
+        </div>
+    </div>
+
+    <!-- Pestañas de Navegación -->
+    <div class="nav-tabs">
+        <div class="nav-tab active" id="tabBtnDashboard" onclick="cambiarPestana('dashboard')">
+            <span>📊 Dashboard Resumen</span>
+        </div>
+        <div class="nav-tab" id="tabBtnDiario" onclick="cambiarPestana('diario')">
+            <span>📋 Diario de Pólizas Registradas</span>
+        </div>
+        <div class="nav-tab" id="tabBtnMasiva" onclick="cambiarPestana('masiva')">
+            <span>📥 Subir Excel y Generar Pólizas</span>
+        </div>
+        <div class="nav-tab" id="tabBtnBandeja" onclick="cambiarPestana('bandeja')">
+            <span>🔍 Bandeja de Revisión / Documentos</span>
+            <span class="tab-badge" id="badgePendientes">0</span>
+        </div>
+        <div class="nav-tab" id="tabBtnManual" onclick="cambiarPestana('manual')">
+            <span>➕ Captura Manual</span>
+        </div>
+    </div>
+
+    <!-- Panel de Saldos Totales Separados por Moneda -->
+    <div class="summary-bar">
+        <div class="summary-card">
+            <div class="title"><span>Saldo Total MXN</span> <span>[Pesos]</span></div>
+            <div class="amount mxn" id="totalMxn">$0.00</div>
+        </div>
+        <div class="summary-card">
+            <div class="title"><span>Ingresos / Egresos MXN</span> <span>Confirmados</span></div>
+            <div style="font-size: 11px; display:flex; justify-content:space-between; margin-top:2px;">
+                <span style="color:var(--cpq-success);" id="ingresosMxn">+0.00</span>
+                <span style="color:var(--cpq-danger);" id="egresosMxn">-0.00</span>
+            </div>
+        </div>
+        <div class="summary-card">
+            <div class="title"><span>Saldo Total USD</span> <span>[Dólares]</span></div>
+            <div class="amount usd" id="totalUsd">$0.00</div>
+        </div>
+        <div class="summary-card">
+            <div class="title"><span>Ingresos / Egresos USD</span> <span>Confirmados</span></div>
+            <div style="font-size: 11px; display:flex; justify-content:space-between; margin-top:2px;">
+                <span style="color:var(--cpq-success);" id="ingresosUsd">+0.00</span>
+                <span style="color:var(--cpq-danger);" id="egresosUsd">-0.00</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== PESTAÑA 1: DASHBOARD EJECUTIVO ==================== -->
+    <div class="tab-content active" id="view-dashboard">
+        <div class="panel">
+            <div class="panel-header">
+                <span>Dashboard Ejecutivo - Resumen Financiero y Flujo de Efectivo</span>
+                <button type="button" class="btn-sm btn-primary" onclick="renderizarDashboard()">🔄 Actualizar Dashboard</button>
+            </div>
+            
+            <div class="dash-grid">
+                <!-- Tarjeta 1: Desglose por Objeto de Negocio -->
+                <div class="dash-card">
+                    <div class="dash-card-header">
+                        <span>🏷️ Resumen por Objeto de Negocio</span>
+                        <span style="font-size: 10px; color: var(--cpq-text-muted);">Ingresos / Egresos / Neto</span>
+                    </div>
+                    <div class="dash-card-body">
+                        <div style="height:150px; margin-bottom:8px;"><canvas id="chartObjetos"></canvas></div>
+                        <div id="dashObjetosBody"></div>
+                    </div>
+                </div>
+
+                <!-- Tarjeta 2: Desglose por Banco -->
+                <div class="dash-card">
+                    <div class="dash-card-header">
+                        <span>🏦 Saldos y Movimientos por Institución Bancaria</span>
+                        <span style="font-size: 10px; color: var(--cpq-text-muted);">Posición de Cuentas</span>
+                    </div>
+                    <div class="dash-card-body">
+                        <div style="height:150px; margin-bottom:8px;"><canvas id="chartBancos"></canvas></div>
+                        <div id="dashBancosBody"></div>
+                    </div>
+                </div>
+
+                <!-- Tarjeta 3: Distribución por Tipo de Operación -->
+                <div class="dash-card">
+                    <div class="dash-card-header">
+                        <span>📈 Clasificación de Movimientos</span>
+                        <span style="font-size: 10px; color: var(--cpq-text-muted);">Ingresos, Egresos, Traspasos, Comisiones</span>
+                    </div>
+                    <div class="dash-card-body">
+                        <div style="height:150px; margin-bottom:8px;"><canvas id="chartTipos"></canvas></div>
+                        <div id="dashTiposBody"></div>
+                    </div>
+                </div>
+
+                <!-- Tarjeta 4: Estado Documental -->
+                <div class="dash-card">
+                    <div class="dash-card-header">
+                        <span>📎 Estado de Soporte Documental (XML / PDF)</span>
+                        <span style="font-size: 10px; color: var(--cpq-text-muted);">Auditoría Contable</span>
+                    </div>
+                    <div class="dash-card-body">
+                        <div style="height:150px; margin-bottom:8px;"><canvas id="chartSoporte"></canvas></div>
+                        <div id="dashSoporteBody"></div>
+                    </div>
+                </div>
+
+                <!-- Tarjeta 5: Flujo de Caja Acumulado en el Tiempo -->
+                <div class="dash-card" style="grid-column: 1 / -1;">
+                    <div class="dash-card-header">
+                        <span>📉 Flujo de Caja Acumulado en el Tiempo</span>
+                        <span style="font-size: 10px; color: var(--cpq-text-muted);">Saldo corrido por moneda (MXN / USD)</span>
+                    </div>
+                    <div class="dash-card-body">
+                        <div style="height:220px;"><canvas id="chartFlujoTiempo"></canvas></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== PESTAÑA 2: DIARIO GENERAL DE PÓLIZAS ==================== -->
+    <div class="tab-content" id="view-diario">
+        <div class="panel">
+            <div class="panel-header">
+                <span>Pólizas Bancarias Registradas en Firme</span>
+                <span id="recordCount">0 pólizas</span>
+            </div>
+
+            <div class="toolbar">
+                <div class="toolbar-group">
+                    <label>Buscar:</label>
+                    <input type="text" id="filtroTexto" placeholder="Concepto, referencia..." oninput="renderizarGridDiario()" style="width: 140px;">
+                </div>
+                <div class="toolbar-group">
+                    <label>Banco:</label>
+                    <select id="filtroBanco" onchange="renderizarGridDiario()"><option value="">-- Todos --</option></select>
+                </div>
+                <div class="toolbar-group">
+                    <label>Objeto de Negocio:</label>
+                    <select id="filtroObjeto" onchange="renderizarGridDiario()"><option value="">-- Todos --</option></select>
+                </div>
+                <div class="toolbar-group">
+                    <label>Moneda:</label>
+                    <select id="filtroMoneda" onchange="renderizarGridDiario()">
+                        <option value="">Todas</option>
+                        <option value="MXN">MXN</option>
+                        <option value="USD">USD</option>
+                    </select>
+                </div>
+                <div class="toolbar-group">
+                    <label>Tipo:</label>
+                    <select id="filtroTipo" onchange="renderizarGridDiario()">
+                        <option value="">Todos</option>
+                        <option value="Ingreso">Ingreso</option>
+                        <option value="Egreso">Egreso</option>
+                        <option value="Comisión Bancaria">Comisión</option>
+                        <option value="Traspaso">Traspaso</option>
+                    </select>
+                </div>
+                <div style="margin-left: auto; display: flex; gap: 4px; align-items: center;">
+                    <span id="contadorSeleccionDiario" style="font-size: 11px; color: var(--cpq-text-muted); margin-right: 4px;"></span>
+                    <button type="button" class="btn-danger" onclick="eliminarSeleccionadosDiario()">🗑️ Eliminar Seleccionadas</button>
+                    <button type="button" class="btn-success" onclick="exportarCSV()">📊 Exportar Excel (CSV)</button>
+                </div>
+            </div>
+
+            <div class="grid-container">
+                <table class="cpq-grid">
+                    <thead>
+                        <tr>
+                            <th style="width: 28px;" class="text-center">
+                                <input type="checkbox" id="chkSeleccionarTodosDiario" onclick="toggleSeleccionarTodosDiario(this.checked)" title="Seleccionar / deseleccionar todas las visibles">
+                            </th>
+                            <th style="width: 75px;">Fecha</th>
+                            <th style="width: 110px;">Banco</th>
+                            <th style="width: 120px;">Objeto de Negocio</th>
+                            <th style="width: 95px;">Tipo</th>
+                            <th style="width: 45px;" class="text-center">Moneda</th>
+                            <th style="width: 90px;" class="text-right">Importe</th>
+                            <th>Concepto / Observaciones</th>
+                            <th style="width: 150px;">Soporte (XML/PDF / Justif)</th>
+                            <th style="width: 90px;" class="text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="gridDiarioBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== PESTAÑA 3: SUBIR EXCEL Y GENERAR PÓLIZAS ==================== -->
+    <div class="tab-content" id="view-masiva">
+        <div class="panel">
+            <div class="panel-header">
+                <span>Carga de Excel y Generación Automática de Pólizas Bancarias</span>
+                <span style="font-size: 10px;">Procesamiento Directo y Antiduplicados</span>
+            </div>
+            <div class="panel-body" style="max-width: 820px; margin: 0 auto; width: 100%; gap: 12px;">
+                
+                <div style="background: #ffffff; border: 1px solid var(--cpq-border); border-radius: 4px; padding: 12px;">
+                    <div style="font-weight: bold; color: var(--cpq-header); font-size: 12px; margin-bottom: 6px;">
+                        1. Configuración Obligatoria antes de Cargar (Banco y Objeto de Negocio)
+                    </div>
+                    <div class="form-row-3">
+                        <div class="form-group">
+                            <label>Institución Bancaria: <span class="req">*</span></label>
+                            <div class="form-row-btn">
+                                <select id="autoBanco" style="width: 100%;"></select>
+                                <button type="button" onclick="abrirModalBanco()">➕</button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Objeto de Negocio: <span class="req">*</span></label>
+                            <div class="form-row-btn">
+                                <select id="autoObjeto" style="width: 100%;"></select>
+                                <button type="button" onclick="abrirModalObjeto()">➕</button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Moneda: <span class="req">*</span></label>
+                            <select id="autoMoneda">
+                                <option value="MXN">Pesos Mexicanos (MXN)</option>
+                                <option value="USD">Dólares Estadounidenses (USD)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="chkGenerarDirecto" checked>
+                        <label for="chkGenerarDirecto" style="font-weight: bold; color: var(--cpq-header); cursor: pointer;">
+                            ⚡ Generar pólizas directamente en firme (impactar Diario y Dashboard de inmediato)
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Botón y zona de arrastrar archivo -->
+                <div class="upload-hero" id="heroDrop" onclick="abrirSelectorArchivo()">
+                    <div style="font-size: 38px; margin-bottom: 6px;">📑</div>
+                    <div style="font-size: 14px; font-weight: bold; color: var(--cpq-header);">
+                        Haga clic aquí para subir su archivo Excel (.xlsx) o arrástrelo a este recuadro
+                    </div>
+                    <div style="color: var(--cpq-text-muted); font-size: 11px; margin-top: 4px;">
+                        Lee todas las pestañas mensuales (JULIO 26, AGOSTO 26) y genera las pólizas automáticamente.
+                    </div>
+                </div>
+
+                <!-- Input real oculto -->
+                <input type="file" id="fileInputExcel" accept=".xlsx, .xls" style="display: none;" onchange="procesarArchivoExcelDirecto(this.files)">
+
+                <div style="background: #e1f5fe; border: 1px solid #81d4fa; padding: 8px 12px; border-radius: 3px; font-size: 11px; color: #01579b;">
+                    🛡️ <strong>Garantía Antiduplicados:</strong> El sistema analiza Fecha, Banco, Objeto, Importe, Tipo, Concepto y Saldo. Aunque vuelvas a subir el mismo archivo varias veces, solo se registrarán los movimientos nuevos y los repetidos serán ignorados de forma automática.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== PESTAÑA 4: BANDEJA DE REVISIÓN Y CONFIRMACIÓN ==================== -->
+    <div class="tab-content" id="view-bandeja">
+        <div class="panel">
+            <div class="panel-header">
+                <span>Bandeja de Revisión y Soporte Documental (XML / PDF)</span>
+                <span id="pendientesContador">0 pendientes</span>
+            </div>
+
+            <div class="toolbar">
+                <span style="font-size: 11px; font-weight: bold; color: var(--cpq-danger);">
+                    ⚠️ Aquí puedes adjuntar los archivos XML / PDF o registrar los motivos de las operaciones sin documento.
+                </span>
+                <div style="margin-left: auto; display: flex; gap: 6px;">
+                    <button type="button" class="btn-success" onclick="confirmarSeleccionados()">✅ Confirmar Seleccionados</button>
+                    <button type="button" class="btn-danger btn-sm" onclick="descartarSeleccionados()">🗑️ Descartar</button>
+                </div>
+            </div>
+
+            <div class="grid-container">
+                <table class="cpq-grid">
+                    <thead>
+                        <tr>
+                            <th style="width: 25px;" class="text-center"><input type="checkbox" id="chkTodos" onchange="toggleTodosBandeja(this)"></th>
+                            <th style="width: 75px;">Fecha</th>
+                            <th style="width: 100px;">Banco</th>
+                            <th style="width: 110px;">Objeto de Negocio</th>
+                            <th style="width: 95px;">Tipo</th>
+                            <th style="width: 45px;" class="text-center">Moneda</th>
+                            <th style="width: 85px;" class="text-right">Importe</th>
+                            <th>Concepto Bancario / Observación</th>
+                            <th style="width: 150px;">Soporte (XML/PDF)</th>
+                            <th style="width: 110px;" class="text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="gridBandejaBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== PESTAÑA 5: CAPTURA MANUAL INDIVIDUAL ==================== -->
+    <div class="tab-content" id="view-manual">
+        <div class="panel" style="max-width: 580px; margin: 0 auto; width: 100%;">
+            <div class="panel-header">
+                <span id="manualFormTitle">Registro Manual de Movimiento</span>
+            </div>
+            <div class="panel-body">
+                <form id="formManual" onsubmit="guardarMovimientoManual(event)">
+                    <input type="hidden" id="manualEditId" value="">
+
+                    <div class="form-row-2">
+                        <div class="form-group">
+                            <label>Fecha: <span class="req">*</span></label>
+                            <input type="date" id="manFecha" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Moneda: <span class="req">*</span></label>
+                            <select id="manMoneda" required>
+                                <option value="MXN">MXN (Pesos)</option>
+                                <option value="USD">USD (Dólares)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-row-2">
+                        <div class="form-group">
+                            <label>Banco / Cuenta: <span class="req">*</span></label>
+                            <div class="form-row-btn">
+                                <select id="manBanco" required style="width: 100%;"></select>
+                                <button type="button" onclick="abrirModalBanco()">➕</button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Objeto de Negocio: <span class="req">*</span></label>
+                            <div class="form-row-btn">
+                                <select id="manObjeto" required style="width: 100%;"></select>
+                                <button type="button" onclick="abrirModalObjeto()">➕</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-row-2">
+                        <div class="form-group">
+                            <label>Tipo de Operación: <span class="req">*</span></label>
+                            <select id="manTipo" required>
+                                <option value="Egreso">Egreso (-)</option>
+                                <option value="Ingreso">Ingreso (+)</option>
+                                <option value="Comisión Bancaria">Comisión Bancaria (-)</option>
+                                <option value="Traspaso">Traspaso</option>
+                                <option value="Intereses">Intereses (+)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Importe: <span class="req">*</span></label>
+                            <input type="number" id="manMonto" step="0.01" min="0.01" placeholder="0.00" required style="text-align: right; font-weight: bold; font-family: monospace;">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Concepto / Motivo de la Operación: <span class="req">*</span></label>
+                        <textarea id="manMotivo" rows="2" placeholder="Describa el motivo, beneficiario o referencia..." required></textarea>
+                    </div>
+
+                    <div style="background: #f1f5f9; border: 1px dashed var(--cpq-border); padding: 8px; border-radius: 3px; display: flex; flex-direction: column; gap: 6px;">
+                        <label style="color: #1e293b;">📎 Comprobante / Soporte Fiscal</label>
+                        <div class="form-group">
+                            <label style="font-size: 10px;">Adjuntar archivo (XML o PDF):</label>
+                            <input type="file" id="manArchivo" accept=".xml,.pdf" onchange="validarSoporteManual()" style="font-size: 10px;">
+                        </div>
+                        <div id="manSinSoporteBox" class="form-group">
+                            <label style="font-size: 10px; color: var(--cpq-danger);">Motivo por el cual no existe XML/PDF:</label>
+                            <textarea id="manMotivoSinSoporte" rows="2" placeholder="Especifique la justificación contable/administrativa..."></textarea>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 6px; margin-top: 6px;">
+                        <button type="submit" class="btn-primary" style="flex:1;">💾 Guardar y Confirmar</button>
+                        <button type="button" onclick="cancelarManual()">Limpiar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== MODAL: REVISAR EN BANDEJA ==================== -->
+    <div class="modal-overlay" id="modalRevision">
+        <div class="modal" style="width: 460px;">
+            <div class="modal-header">
+                <span>Validación y Documentación de Póliza</span>
+                <span style="cursor:pointer;" onclick="cerrarModalRevision()">✖</span>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="revId">
+
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Fecha:</label>
+                        <input type="date" id="revFecha">
+                    </div>
+                    <div class="form-group">
+                        <label>Moneda:</label>
+                        <select id="revMoneda">
+                            <option value="MXN">MXN</option>
+                            <option value="USD">USD</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Banco:</label>
+                        <select id="revBanco"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Objeto de Negocio:</label>
+                        <select id="revObjeto"></select>
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Tipo de Operación:</label>
+                        <select id="revTipo">
+                            <option value="Ingreso">Ingreso (+)</option>
+                            <option value="Egreso">Egreso (-)</option>
+                            <option value="Comisión Bancaria">Comisión Bancaria (-)</option>
+                            <option value="Traspaso">Traspaso</option>
+                            <option value="Intereses">Intereses (+)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Importe:</label>
+                        <input type="number" id="revMonto" step="0.01" style="font-weight: bold; font-family: monospace; text-align: right;">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Concepto / Observación:</label>
+                    <textarea id="revMotivo" rows="2"></textarea>
+                </div>
+
+                <div style="background: #f8fafc; border: 1px dashed var(--cpq-border); padding: 8px; border-radius: 3px;">
+                    <label style="color: #1e293b; font-weight: bold;">📎 Soporte Fiscal (XML o PDF):</label>
+                    <input type="file" id="revArchivo" accept=".xml,.pdf" onchange="validarSoporteRevision()" style="font-size: 10px; margin-top:4px;">
+                    
+                    <div id="revSinSoporteBox" class="form-group" style="margin-top: 6px;">
+                        <label style="font-size: 10px; color: var(--cpq-danger);">Motivo por el cual no existe soporte:</label>
+                        <textarea id="revMotivoSinSoporte" rows="2" placeholder="Justificación administrativa..."></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-success" onclick="guardarYConfirmarEnModal()">✅ Confirmar Póliza</button>
+                <button type="button" class="btn-primary" onclick="guardarCambiosEnBandeja()">💾 Guardar sin Confirmar</button>
+                <button type="button" onclick="cerrarModalRevision()">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL CATÁLOGO BANCOS -->
+    <div class="modal-overlay" id="modalBanco">
+        <div class="modal" style="width: 350px;">
+            <div class="modal-header">
+                <span>Alta de Banco en Catálogo</span>
+                <span style="cursor:pointer;" onclick="cerrarModalBanco()">✖</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Nombre del Banco / Cuenta:</label>
+                    <input type="text" id="nuevoBancoNombre" placeholder="Ej. Mifel Dólares, BBVA...">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-primary" onclick="guardarNuevoBanco()">Guardar</button>
+                <button type="button" onclick="cerrarModalBanco()">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL CATÁLOGO OBJETO DE NEGOCIO -->
+    <div class="modal-overlay" id="modalObjeto">
+        <div class="modal" style="width: 350px;">
+            <div class="modal-header">
+                <span>Alta de Objeto de Negocio</span>
+                <span style="cursor:pointer;" onclick="cerrarModalObjeto()">✖</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Nombre del Objeto de Negocio:</label>
+                    <input type="text" id="nuevoObjetoNombre" placeholder="Ej. tours, tirolesa, restaurant...">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-primary" onclick="guardarNuevoObjeto()">Guardar</button>
+                <button type="button" onclick="cerrarModalObjeto()">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DIVIDIR PÓLIZA EN PARTIDAS -->
+    <div class="modal-overlay" id="modalDividir">
+        <div class="modal" style="width: 540px; max-height: 88vh;">
+            <div class="modal-header">
+                <span>🔀 Dividir Póliza en Varias Partidas / Beneficiarios</span>
+                <span style="cursor:pointer;" onclick="cerrarModalDividir()">✖</span>
+            </div>
+            <div class="modal-body" style="overflow-y:auto;">
+                <input type="hidden" id="dividirId">
+
+                <div style="background:#f1f5f9; border:1px solid var(--cpq-border-light); padding:8px 10px; border-radius:3px; font-size:11px;" id="dividirResumenOriginal"></div>
+
+                <div style="font-size:10.5px; color:#546e7a;">
+                    Reparta el importe total entre las personas o conceptos a los que realmente se pagó. La suma de las partidas debe coincidir exactamente con el importe original.
+                </div>
+
+                <div id="dividirPartidasContainer" style="display:flex; flex-direction:column; gap:6px;"></div>
+
+                <button type="button" class="btn-sm" onclick="agregarPartidaSplit()" style="align-self:flex-start;">➕ Agregar Partida</button>
+
+                <div id="dividirTotalesBox" style="background:#fffde7; border:1px dashed var(--cpq-border); padding:8px 10px; border-radius:3px; font-size:11px; font-weight:bold; line-height:1.5;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-success" onclick="guardarDividirPoliza()">✅ Confirmar División</button>
+                <button type="button" onclick="cerrarModalDividir()">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Aquí se inyectan los datos cuando se genera un respaldo con "Generar y Descargar HTML".
+         En este archivo (el que se está usando en vivo) queda en null y no afecta nada. -->
+    <script type="application/json" id="cpqSnapshotData">null</script>
+
+    <!-- ==================== SCRIPT JAVASCRIPT ==================== -->
+    <script>
+        const BANCOS_DEFAULT = ["Mifel", "Terminal C", "Banregio", "Actinver", "BanBajío"];
+        const OBJETOS_DEFAULT = ["privado plus ( fotos)", "fotos", "tequila"];
+        // Mismos tipos de operación que el select de Captura Manual (manTipo), para que el
+        // editor rápido de "Tipo" en el Diario siempre ofrezca exactamente las mismas opciones.
+        const TIPOS_OPERACION = ["Egreso", "Ingreso", "Comisión Bancaria", "Traspaso", "Intereses"];
+
+        // Si este archivo es un respaldo generado con "Generar y Descargar HTML", trae los
+        // datos incrustados en el <script id="cpqSnapshotData">. Se usan como punto de partida
+        // la primera vez que se abre ese archivo (cuando su localStorage aún está vacío).
+        let snapshotData = null;
+        try {
+            const snapEl = document.getElementById('cpqSnapshotData');
+            const snapTxt = snapEl ? snapEl.textContent.trim() : '';
+            if (snapTxt && snapTxt !== 'null') snapshotData = JSON.parse(snapTxt);
+        } catch (e) { snapshotData = null; }
+
+        function cargarValorInicial(claveLocalStorage, campoSnapshot, valorPorDefecto) {
+            const guardadoLocal = localStorage.getItem(claveLocalStorage);
+            if (guardadoLocal !== null) {
+                try { return JSON.parse(guardadoLocal); } catch (e) { /* sigue abajo */ }
+            }
+            if (snapshotData && snapshotData[campoSnapshot] !== undefined) {
+                return snapshotData[campoSnapshot];
+            }
+            return valorPorDefecto;
+        }
+
+        let bancos = cargarValorInicial('cpq_bancos', 'bancos', BANCOS_DEFAULT);
+        let objetos = cargarValorInicial('cpq_objetos', 'objetos', OBJETOS_DEFAULT);
+        let movimientosConfirmados = cargarValorInicial('cpq_movimientos', 'movimientosConfirmados', []);
+        let movimientosBandeja = cargarValorInicial('cpq_bandeja', 'movimientosBandeja', []);
+
+        // Primera vez que se abre este archivo de respaldo: guardamos ya los datos incrustados
+        // en su propio localStorage para que, de aquí en adelante, funcione de forma independiente.
+        if (snapshotData && localStorage.getItem('cpq_movimientos') === null) {
+            persistirTodo();
+        }
+
+        let tempManArchivoBase64 = null;
+        let tempManArchivoNombre = null;
+        let tempRevArchivoBase64 = null;
+        let tempRevArchivoNombre = null;
+
+        window.onload = function() {
+            document.getElementById('manFecha').valueAsDate = new Date();
+            cargarCombos();
+            validarSoporteManual();
+            renderizarTodo();
+            configurarDragAndDrop();
+        };
+
+        function persistirTodo() {
+            localStorage.setItem('cpq_bancos', JSON.stringify(bancos));
+            localStorage.setItem('cpq_objetos', JSON.stringify(objetos));
+            localStorage.setItem('cpq_movimientos', JSON.stringify(movimientosConfirmados));
+            localStorage.setItem('cpq_bandeja', JSON.stringify(movimientosBandeja));
+        }
+
+        function renderizarTodo() {
+            renderizarSaldos();
+            renderizarGridDiario();
+            renderizarGridBandeja();
+            renderizarDashboard();
+            actualizarBadges();
+        }
+
+        function cambiarPestana(pestana) {
+            document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+            if (pestana === 'dashboard') {
+                document.getElementById('tabBtnDashboard').classList.add('active');
+                document.getElementById('view-dashboard').classList.add('active');
+                renderizarDashboard();
+            } else if (pestana === 'diario') {
+                document.getElementById('tabBtnDiario').classList.add('active');
+                document.getElementById('view-diario').classList.add('active');
+                renderizarGridDiario();
+            } else if (pestana === 'masiva') {
+                document.getElementById('tabBtnMasiva').classList.add('active');
+                document.getElementById('view-masiva').classList.add('active');
+            } else if (pestana === 'bandeja') {
+                document.getElementById('tabBtnBandeja').classList.add('active');
+                document.getElementById('view-bandeja').classList.add('active');
+                renderizarGridBandeja();
+            } else if (pestana === 'manual') {
+                document.getElementById('tabBtnManual').classList.add('active');
+                document.getElementById('view-manual').classList.add('active');
+            }
+        }
+
+        function actualizarBadges() {
+            const c = movimientosBandeja.length;
+            document.getElementById('badgePendientes').textContent = c;
+            document.getElementById('pendientesContador').textContent = `${c} movimientos pendientes de confirmación`;
+        }
+
+        function cargarCombos() {
+            const selectsBancos = ['filtroBanco', 'autoBanco', 'manBanco', 'revBanco'];
+            selectsBancos.forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                const prev = el.value;
+                el.innerHTML = id === 'filtroBanco' ? '<option value="">-- Todos --</option>' : '';
+                bancos.forEach(b => {
+                    const opt = document.createElement('option');
+                    opt.value = b;
+                    opt.textContent = b;
+                    el.appendChild(opt);
+                });
+                if (prev) el.value = prev;
+            });
+
+            const selectsObjetos = ['filtroObjeto', 'autoObjeto', 'manObjeto', 'revObjeto'];
+            selectsObjetos.forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                const prev = el.value;
+                el.innerHTML = id === 'filtroObjeto' ? '<option value="">-- Todos --</option>' : '';
+                objetos.forEach(o => {
+                    const opt = document.createElement('option');
+                    opt.value = o;
+                    opt.textContent = o;
+                    el.appendChild(opt);
+                });
+                if (prev) el.value = prev;
+            });
+        }
+
+        function abrirSelectorArchivo() {
+            const input = document.getElementById('fileInputExcel');
+            input.value = '';
+            input.click();
+        }
+
+        function configurarDragAndDrop() {
+            const hero = document.getElementById('heroDrop');
+            if (!hero) return;
+
+            ['dragenter', 'dragover'].forEach(eName => {
+                hero.addEventListener(eName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    hero.classList.add('dragover');
+                }, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eName => {
+                hero.addEventListener(eName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    hero.classList.remove('dragover');
+                }, false);
+            });
+
+            hero.addEventListener('drop', (e) => {
+                const dt = e.dataTransfer;
+                if (dt && dt.files && dt.files.length > 0) {
+                    procesarArchivoExcelDirecto(dt.files);
+                }
+            }, false);
+        }
+
+        function generarHuella(m) {
+            const fechaStr = (m.fecha || '').trim();
+            const bancoStr = (m.banco || '').trim().toLowerCase();
+            const objetoStr = (m.objeto || '').trim().toLowerCase();
+            const monedaStr = (m.moneda || '').trim().toUpperCase();
+            const tipoStr = (m.tipo || '').trim().toLowerCase();
+            const montoStr = parseFloat(m.monto || 0).toFixed(2);
+            const motivoStr = (m.motivo || '').replace(/\s+/g, ' ').trim().toLowerCase();
+            const saldoStr = m.saldoFinal !== undefined && m.saldoFinal !== null ? parseFloat(m.saldoFinal).toFixed(2) : '';
+
+            return `${fechaStr}|${bancoStr}|${objetoStr}|${monedaStr}|${tipoStr}|${montoStr}|${motivoStr}|${saldoStr}`;
+        }
+
+        // Quita acentos/diacríticos y pasa a minúsculas, para que "Depósitos", "Comisión", etc.
+        // se reconozcan igual que "depositos", "comision" al leer estados de cuenta reales.
+        function normalizarTexto(val) {
+            if (val === undefined || val === null) return '';
+            return val.toString()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase()
+                .trim();
+        }
+
+        function procesarArchivoExcelDirecto(files) {
+            if (!files || files.length === 0) return;
+            const file = files[0];
+
+            if (typeof XLSX === 'undefined') {
+                alert('La librería SheetJS está cargando. Espere 2 segundos y vuelva a intentar.');
+                return;
+            }
+
+            const banco = document.getElementById('autoBanco').value;
+            const objeto = document.getElementById('autoObjeto').value;
+            const moneda = document.getElementById('autoMoneda').value;
+            const generarDirecto = document.getElementById('chkGenerarDirecto').checked;
+
+            if (!banco || !objeto) {
+                alert('Seleccione Banco y Objeto de Negocio en la parte superior antes de cargar el archivo.');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                try {
+                    const data = new Uint8Array(evt.target.result);
+                    const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+
+                    const huellasExistentes = new Set();
+                    movimientosConfirmados.forEach(m => huellasExistentes.add(generarHuella(m)));
+                    movimientosBandeja.forEach(m => huellasExistentes.add(generarHuella(m)));
+
+                    let totalImportados = 0;
+                    let totalDuplicados = 0;
+                    let totalSinReconocer = 0;
+                    let hojasSinEncabezado = [];
+
+                    workbook.SheetNames.forEach(sheetName => {
+                        if (normalizarTexto(sheetName) === 'hoja1') return;
+                        const ws = workbook.Sheets[sheetName];
+                        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, dateNF: 'yyyy-mm-dd' });
+
+                        if (!rows || rows.length === 0) return;
+
+                        let headerIdx = -1;
+                        for (let i = 0; i < Math.min(25, rows.length); i++) {
+                            const r = rows[i];
+                            if (r && r.some(c => normalizarTexto(c).includes('fecha')) &&
+                                r.some(c => normalizarTexto(c).includes('concepto'))) {
+                                headerIdx = i;
+                                break;
+                            }
+                        }
+                        if (headerIdx === -1) { hojasSinEncabezado.push(sheetName); return; }
+
+                        // Encabezados normalizados (sin acentos) para que "Depósitos", "Comisión",
+                        // "Cargos", etc. se reconozcan sin importar cómo los exporte cada banco.
+                        // Se arma con un for explícito (no .map) porque si el Excel tiene una celda
+                        // vacía en el encabezado, la fila queda como arreglo disperso ("hueco") y
+                        // .map() lo conserva; luego .findIndex() sí visita esos huecos y truena al
+                        // llamar c.includes(...) sobre undefined. El for con acceso por índice evita eso.
+                        const filaHeader = rows[headerIdx] || [];
+                        const h = [];
+                        for (let idx = 0; idx < filaHeader.length; idx++) {
+                            h.push(normalizarTexto(filaHeader[idx]));
+                        }
+                        const colFecha = h.findIndex(c => c.includes('fecha'));
+                        const colConcepto = h.findIndex(c => c.includes('concepto'));
+                        const colRecibido = h.findIndex(c => c.includes('recibido') || c.includes('abono') || c.includes('deposito') || c.includes('ingreso'));
+                        const colEnviado = h.findIndex(c => c.includes('enviado') || c.includes('cargo') || c.includes('retiro') || c.includes('egreso') || c.includes('salida'));
+                        const colSaldo = h.findIndex(c => c.includes('saldo'));
+                        // Respaldo: estados de cuenta con una sola columna de importe (con signo)
+                        // en vez de columnas separadas de cargo/abono.
+                        const colImporteUnico = (colRecibido === -1 && colEnviado === -1)
+                            ? h.findIndex(c => c.includes('importe') || c.includes('monto') || c.includes('cantidad'))
+                            : -1;
+
+                        let colObs = h.findIndex(c => c.includes('observacion') || c.includes('comentario') || c.includes('referencia'));
+                        if (colObs === -1 && colSaldo !== -1) colObs = colSaldo + 1;
+
+                        for (let i = headerIdx + 1; i < rows.length; i++) {
+                            const r = rows[i];
+                            if (!r || r.length === 0) continue;
+
+                            const rawFecha = r[colFecha];
+                            if (!rawFecha) continue;
+
+                            const fechaFormateada = normalizarFecha(rawFecha);
+                            if (!fechaFormateada) continue;
+
+                            const concepto = (r[colConcepto] || '').toString().trim();
+                            const observacion = colObs !== -1 && r[colObs] ? r[colObs].toString().trim() : '';
+
+                            let tipo = 'Egreso';
+                            let monto = 0;
+
+                            if (colImporteUnico !== -1) {
+                                const importe = limpiarMonto(r[colImporteUnico]);
+                                if (importe > 0) { tipo = 'Ingreso'; monto = importe; }
+                                else if (importe < 0) { tipo = 'Egreso'; monto = Math.abs(importe); }
+                                else { totalSinReconocer++; continue; }
+                            } else {
+                                const rec = limpiarMonto(r[colRecibido]);
+                                const env = limpiarMonto(r[colEnviado]);
+                                if (rec > 0) { tipo = 'Ingreso'; monto = rec; }
+                                else if (env > 0) { tipo = 'Egreso'; monto = env; }
+                                else { totalSinReconocer++; continue; }
+                            }
+
+                            const saldo = colSaldo !== -1 ? limpiarMonto(r[colSaldo]) : null;
+
+                            // Clasificación por palabras clave, ya sin acentos, para no fallar con
+                            // "Comisión", "Traspasó", etc.
+                            const texto = normalizarTexto(`${concepto} ${observacion}`);
+                            if (texto.includes('comision') || texto.includes('tarifa') || texto.includes('anualidad')) {
+                                tipo = 'Comisión Bancaria';
+                            } else if (texto.includes('interes') || texto.includes('rendimiento')) {
+                                tipo = 'Intereses';
+                            } else if (texto.includes('traspaso') && texto.includes('pago')) {
+                                tipo = 'Egreso';
+                            } else if (texto.includes('traspaso')) {
+                                tipo = 'Traspaso';
+                            }
+
+                            let motivoFinal = concepto;
+                            if (observacion && observacion !== concepto) {
+                                motivoFinal += ` [${observacion}]`;
+                            }
+
+                            const mov = {
+                                id: 'POL-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+                                fecha: fechaFormateada,
+                                banco: banco,
+                                objeto: objeto,
+                                moneda: moneda,
+                                tipo: tipo,
+                                monto: monto,
+                                motivo: motivoFinal,
+                                saldoFinal: saldo,
+                                archivoNombre: null,
+                                archivoData: null,
+                                motivoSinSoporte: 'Póliza generada automáticamente desde extracto de cuenta',
+                                seleccionado: true
+                            };
+
+                            const huella = generarHuella(mov);
+                            if (huellasExistentes.has(huella)) {
+                                totalDuplicados++;
+                            } else {
+                                huellasExistentes.add(huella);
+                                if (generarDirecto) {
+                                    movimientosConfirmados.push(mov);
+                                } else {
+                                    movimientosBandeja.push(mov);
+                                }
+                                totalImportados++;
+                            }
+                        }
+                    });
+
+                    persistirTodo();
+                    renderizarTodo();
+
+                    document.getElementById('fileInputExcel').value = '';
+
+                    let resumen = `🎉 ¡Carga y Generación Completada!\n\n✔️ Se generaron ${totalImportados} pólizas.\n🛡️ Se omitieron ${totalDuplicados} movimientos repetidos.`;
+                    if (totalSinReconocer > 0) {
+                        resumen += `\n⚠️ ${totalSinReconocer} filas con fecha pero sin importe reconocible (revíselas manualmente).`;
+                    }
+                    if (hojasSinEncabezado.length > 0) {
+                        resumen += `\n⚠️ No se encontró encabezado de tabla en: ${hojasSinEncabezado.join(', ')}.`;
+                    }
+                    alert(resumen);
+
+                    if (generarDirecto) {
+                        cambiarPestana('dashboard');
+                    } else {
+                        cambiarPestana('bandeja');
+                    }
+                } catch (err) {
+                    alert('Error al interpretar el archivo: ' + err.message);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function normalizarFecha(val) {
+            if (!val) return null;
+            if (val instanceof Date && !isNaN(val)) return val.toISOString().slice(0, 10);
+            const s = val.toString().trim();
+            if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+            const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+            if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+            return null;
+        }
+
+        function limpiarMonto(val) {
+            if (val === undefined || val === null) return 0;
+            if (typeof val === 'number') return val;
+            let str = val.toString().replace(/[\$\s,]/g, '').trim();
+            if (str === '-' || str === '') return 0;
+            let n = parseFloat(str);
+            return isNaN(n) ? 0 : n;
+        }
+
+        function renderizarDashboard() {
+            renderizarDashObjetos();
+            renderizarDashBancos();
+            renderizarDashTipos();
+            renderizarDashSoporte();
+            renderizarGraficasDashboard();
+        }
+
+        // ==================== GRÁFICAS DEL DASHBOARD (Chart.js) ====================
+        let dashCharts = {};
+
+        function crearOActualizarChart(canvasId, config) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas || typeof Chart === 'undefined') return;
+            if (dashCharts[canvasId]) dashCharts[canvasId].destroy();
+            dashCharts[canvasId] = new Chart(canvas.getContext('2d'), config);
+        }
+
+        function opcionesChartBase(ocultarLeyenda) {
+            return {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: !ocultarLeyenda, position: 'top', labels: { font: { size: 9 }, boxWidth: 10 } } },
+                scales: {
+                    x: { ticks: { font: { size: 8 } } },
+                    y: { ticks: { font: { size: 9 } } }
+                }
+            };
+        }
+
+        function colorPorTipo(tipo) {
+            return {
+                'Ingreso': '#66bb6a', 'Intereses': '#26a69a', 'Egreso': '#ef5350',
+                'Comisión Bancaria': '#ffa726', 'Traspaso': '#29b6f6'
+            }[tipo] || '#90a4ae';
+        }
+
+        function renderizarGraficasDashboard() {
+            if (typeof Chart === 'undefined') return; // el CDN de Chart.js aún no ha cargado
+
+            // --- 1. Ingresos vs Egresos por Objeto de Negocio (barras agrupadas) ---
+            const mapaObjetos = {};
+            movimientosConfirmados.forEach(m => {
+                const obj = m.objeto || 'Sin Asignar';
+                if (!mapaObjetos[obj]) mapaObjetos[obj] = { ingresos: 0, egresos: 0 };
+                const esIng = (m.tipo === 'Ingreso' || m.tipo === 'Intereses');
+                const esEgr = (m.tipo === 'Egreso' || m.tipo === 'Comisión Bancaria');
+                if (esIng) mapaObjetos[obj].ingresos += m.monto;
+                if (esEgr) mapaObjetos[obj].egresos += m.monto;
+            });
+            const objetosLabels = Object.keys(mapaObjetos);
+            crearOActualizarChart('chartObjetos', {
+                type: 'bar',
+                data: {
+                    labels: objetosLabels,
+                    datasets: [
+                        { label: 'Ingresos', data: objetosLabels.map(k => mapaObjetos[k].ingresos), backgroundColor: '#66bb6a' },
+                        { label: 'Egresos', data: objetosLabels.map(k => mapaObjetos[k].egresos), backgroundColor: '#ef5350' }
+                    ]
+                },
+                options: opcionesChartBase(false)
+            });
+
+            // --- 2. Flujo Neto por Banco (barras, color según signo) ---
+            const mapaBancos = {};
+            movimientosConfirmados.forEach(m => {
+                if (!mapaBancos[m.banco]) mapaBancos[m.banco] = 0;
+                const esIng = (m.tipo === 'Ingreso' || m.tipo === 'Intereses');
+                const esEgr = (m.tipo === 'Egreso' || m.tipo === 'Comisión Bancaria');
+                if (esIng) mapaBancos[m.banco] += m.monto;
+                if (esEgr) mapaBancos[m.banco] -= m.monto;
+            });
+            const bancosLabels = Object.keys(mapaBancos);
+            crearOActualizarChart('chartBancos', {
+                type: 'bar',
+                data: {
+                    labels: bancosLabels,
+                    datasets: [{
+                        label: 'Flujo Neto',
+                        data: bancosLabels.map(k => mapaBancos[k]),
+                        backgroundColor: bancosLabels.map(k => mapaBancos[k] >= 0 ? '#42a5f5' : '#ef5350')
+                    }]
+                },
+                options: opcionesChartBase(true)
+            });
+
+            // --- 3. Distribución por Tipo de Operación (dona) ---
+            const mapaTipos = {};
+            movimientosConfirmados.forEach(m => { mapaTipos[m.tipo] = (mapaTipos[m.tipo] || 0) + m.monto; });
+            const tiposLabels = Object.keys(mapaTipos);
+            crearOActualizarChart('chartTipos', {
+                type: 'doughnut',
+                data: {
+                    labels: tiposLabels,
+                    datasets: [{ data: tiposLabels.map(k => mapaTipos[k]), backgroundColor: tiposLabels.map(colorPorTipo) }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { font: { size: 9 }, boxWidth: 10 } } } }
+            });
+
+            // --- 4. Estado de Soporte Documental (dona) ---
+            let conDoc = 0, conJustif = 0;
+            movimientosConfirmados.forEach(m => { if (m.archivoData) conDoc++; else conJustif++; });
+            crearOActualizarChart('chartSoporte', {
+                type: 'doughnut',
+                data: {
+                    labels: ['Con Soporte (XML/PDF)', 'Con Justificación'],
+                    datasets: [{ data: [conDoc, conJustif], backgroundColor: ['#66bb6a', '#ffa726'] }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { font: { size: 9 }, boxWidth: 10 } } } }
+            });
+
+            // --- 5. Flujo de Caja Acumulado en el Tiempo (línea, por moneda) ---
+            const porFecha = {};
+            movimientosConfirmados.forEach(m => {
+                if (!porFecha[m.fecha]) porFecha[m.fecha] = { MXN: 0, USD: 0 };
+                const esIng = (m.tipo === 'Ingreso' || m.tipo === 'Intereses');
+                const esEgr = (m.tipo === 'Egreso' || m.tipo === 'Comisión Bancaria');
+                const signo = esIng ? 1 : (esEgr ? -1 : 0);
+                if (porFecha[m.fecha][m.moneda] !== undefined) porFecha[m.fecha][m.moneda] += signo * m.monto;
+            });
+            const fechasOrdenadas = Object.keys(porFecha).sort();
+            let acumMxn = 0, acumUsd = 0;
+            const serieMxn = [], serieUsd = [];
+            fechasOrdenadas.forEach(f => {
+                acumMxn += porFecha[f].MXN;
+                acumUsd += porFecha[f].USD;
+                serieMxn.push(Number(acumMxn.toFixed(2)));
+                serieUsd.push(Number(acumUsd.toFixed(2)));
+            });
+            crearOActualizarChart('chartFlujoTiempo', {
+                type: 'line',
+                data: {
+                    labels: fechasOrdenadas.map(f => formatearFechaVisual(f)),
+                    datasets: [
+                        { label: 'Saldo Acumulado MXN', data: serieMxn, borderColor: '#1565c0', backgroundColor: 'rgba(21,101,192,0.12)', tension: 0.25, fill: true },
+                        { label: 'Saldo Acumulado USD', data: serieUsd, borderColor: '#2e7d32', backgroundColor: 'rgba(46,125,50,0.12)', tension: 0.25, fill: true }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'top', labels: { font: { size: 9 }, boxWidth: 10 } } },
+                    scales: {
+                        x: { ticks: { font: { size: 8 }, maxRotation: 45, minRotation: 45 } },
+                        y: { ticks: { font: { size: 9 } } }
+                    }
+                }
+            });
+        }
+
+        function renderizarDashObjetos() {
+            const container = document.getElementById('dashObjetosBody');
+            container.innerHTML = '';
+
+            const mapa = {};
+            movimientosConfirmados.forEach(m => {
+                const obj = m.objeto || 'Sin Asignar';
+                if (!mapa[obj]) mapa[obj] = { ingresos: 0, egresos: 0, count: 0 };
+                const esIng = (m.tipo === 'Ingreso' || m.tipo === 'Intereses');
+                const esEgr = (m.tipo === 'Egreso' || m.tipo === 'Comisión Bancaria');
+
+                if (esIng) mapa[obj].ingresos += m.monto;
+                if (esEgr) mapa[obj].egresos += m.monto;
+                mapa[obj].count++;
+            });
+
+            const keys = Object.keys(mapa);
+            if (keys.length === 0) {
+                container.innerHTML = '<div style="color:#78909c; text-align:center; padding:15px;">No hay pólizas registradas aún.</div>';
+                return;
+            }
+
+            keys.forEach(k => {
+                const item = mapa[k];
+                const neto = item.ingresos - item.egresos;
+                const div = document.createElement('div');
+                div.className = 'stat-row';
+                div.innerHTML = `
+                    <div style="flex:1;">
+                        <strong style="color:var(--cpq-header); font-size:12px;">${k}</strong>
+                        <div style="font-size:10px; color:#546e7a;">${item.count} movimientos registrados</div>
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill" style="width: ${Math.min(100, Math.max(10, (item.ingresos / (item.ingresos + item.egresos || 1)) * 100))}%;"></div>
+                        </div>
+                    </div>
+                    <div style="text-align:right; margin-left:12px;">
+                        <div style="color:var(--cpq-success); font-weight:bold;">+$${item.ingresos.toLocaleString('es-MX', {minimumFractionDigits:2})}</div>
+                        <div style="color:var(--cpq-danger); font-weight:bold;">-$${item.egresos.toLocaleString('es-MX', {minimumFractionDigits:2})}</div>
+                        <div style="font-weight:800; font-family:Consolas; border-top:1px solid #ddd; margin-top:2px;">Neto: $${neto.toLocaleString('es-MX', {minimumFractionDigits:2})}</div>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function renderizarDashBancos() {
+            const container = document.getElementById('dashBancosBody');
+            container.innerHTML = '';
+
+            const mapa = {};
+            movimientosConfirmados.forEach(m => {
+                const b = m.banco;
+                if (!mapa[b]) mapa[b] = { ingresos: 0, egresos: 0, saldo: 0, count: 0 };
+                const esIng = (m.tipo === 'Ingreso' || m.tipo === 'Intereses');
+                const esEgr = (m.tipo === 'Egreso' || m.tipo === 'Comisión Bancaria');
+
+                if (esIng) { mapa[b].ingresos += m.monto; mapa[b].saldo += m.monto; }
+                if (esEgr) { mapa[b].egresos += m.monto; mapa[b].saldo -= m.monto; }
+                mapa[b].count++;
+            });
+
+            const keys = Object.keys(mapa);
+            if (keys.length === 0) {
+                container.innerHTML = '<div style="color:#78909c; text-align:center; padding:15px;">No hay movimientos bancarios.</div>';
+                return;
+            }
+
+            keys.forEach(k => {
+                const item = mapa[k];
+                const div = document.createElement('div');
+                div.className = 'stat-row';
+                div.innerHTML = `
+                    <div>
+                        <strong style="color:var(--cpq-header); font-size:12px;">${k}</strong>
+                        <div style="font-size:10px; color:#546e7a;">${item.count} operaciones registradas</div>
+                    </div>
+                    <div style="text-align:right;">
+                        <div style="font-size:13px; font-weight:bold; font-family:Consolas; color:${item.saldo >= 0 ? '#0d47a1' : '#c62828'};">
+                            Flujo Neto: $${item.saldo.toLocaleString('es-MX', {minimumFractionDigits:2})}
+                        </div>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function renderizarDashTipos() {
+            const container = document.getElementById('dashTiposBody');
+            container.innerHTML = '';
+
+            const mapa = {};
+            let totalGeneral = 0;
+            movimientosConfirmados.forEach(m => {
+                if (!mapa[m.tipo]) mapa[m.tipo] = { total: 0, count: 0 };
+                mapa[m.tipo].total += m.monto;
+                mapa[m.tipo].count++;
+                totalGeneral += m.monto;
+            });
+
+            const keys = Object.keys(mapa);
+            if (keys.length === 0) {
+                container.innerHTML = '<div style="color:#78909c; text-align:center; padding:15px;">No hay datos disponibles.</div>';
+                return;
+            }
+
+            keys.forEach(k => {
+                const item = mapa[k];
+                const pct = totalGeneral > 0 ? ((item.total / totalGeneral) * 100).toFixed(1) : 0;
+                const div = document.createElement('div');
+                div.className = 'stat-row';
+                div.innerHTML = `
+                    <div style="flex:1;">
+                        <strong>${k}</strong>
+                        <div style="font-size:10px; color:#546e7a;">${item.count} registros (${pct}%)</div>
+                    </div>
+                    <div style="font-family:Consolas; font-weight:bold; font-size:12px;">
+                        $${item.total.toLocaleString('es-MX', {minimumFractionDigits:2})}
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function renderizarDashSoporte() {
+            const container = document.getElementById('dashSoporteBody');
+            container.innerHTML = '';
+
+            let conDoc = 0;
+            let conJustif = 0;
+
+            movimientosConfirmados.forEach(m => {
+                if (m.archivoData) conDoc++;
+                else conJustif++;
+            });
+
+            const total = conDoc + conJustif;
+            if (total === 0) {
+                container.innerHTML = '<div style="color:#78909c; text-align:center; padding:15px;">Sin pólizas para auditar.</div>';
+                return;
+            }
+
+            const pctDoc = ((conDoc / total) * 100).toFixed(1);
+            const pctJust = ((conJustif / total) * 100).toFixed(1);
+
+            container.innerHTML = `
+                <div class="stat-row">
+                    <div>
+                        <strong style="color:var(--cpq-success);">📎 Con Soporte Adjunto (XML/PDF)</strong>
+                        <div style="font-size:10px; color:#546e7a;">${conDoc} pólizas con documento fiscal</div>
+                    </div>
+                    <div style="font-weight:bold; font-size:13px; color:var(--cpq-success);">${pctDoc}%</div>
+                </div>
+                <div class="stat-row">
+                    <div>
+                        <strong style="color:var(--cpq-warning);">⚠️ Con Justificación Administrativa</strong>
+                        <div style="font-size:10px; color:#546e7a;">${conJustif} pólizas sin comprobante digital</div>
+                    </div>
+                    <div style="font-weight:bold; font-size:13px; color:var(--cpq-warning);">${pctJust}%</div>
+                </div>
+            `;
+        }
+
+        function renderizarSaldos() {
+            let s = { mxnTotal: 0, mxnIng: 0, mxnEgr: 0, usdTotal: 0, usdIng: 0, usdEgr: 0 };
+
+            movimientosConfirmados.forEach(m => {
+                const esIng = (m.tipo === 'Ingreso' || m.tipo === 'Intereses');
+                const esEgr = (m.tipo === 'Egreso' || m.tipo === 'Comisión Bancaria');
+
+                if (m.moneda === 'MXN') {
+                    if (esIng) s.mxnIng += m.monto;
+                    if (esEgr) s.mxnEgr += m.monto;
+                    s.mxnTotal += esIng ? m.monto : (esEgr ? -m.monto : 0);
+                } else if (m.moneda === 'USD') {
+                    if (esIng) s.usdIng += m.monto;
+                    if (esEgr) s.usdEgr += m.monto;
+                    s.usdTotal += esIng ? m.monto : (esEgr ? -m.monto : 0);
+                }
+            });
+
+            document.getElementById('totalMxn').textContent = 'MXN $' + s.mxnTotal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            document.getElementById('ingresosMxn').textContent = '+$' + s.mxnIng.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            document.getElementById('egresosMxn').textContent = '-$' + s.mxnEgr.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+            document.getElementById('totalUsd').textContent = 'USD $' + s.usdTotal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            document.getElementById('ingresosUsd').textContent = '+$' + s.usdIng.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            document.getElementById('egresosUsd').textContent = '-$' + s.usdEgr.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        // Ids seleccionados en el Diario para borrado masivo. Se conserva entre
+        // re-renders (filtros, cambios de tipo, etc.) hasta que se borren o se
+        // deseleccionen manualmente.
+        let seleccionDiario = new Set();
+
+        function renderizarGridDiario() {
+            const tbody = document.getElementById('gridDiarioBody');
+            tbody.innerHTML = '';
+
+            const texto = document.getElementById('filtroTexto').value.toLowerCase();
+            const bancoFiltro = document.getElementById('filtroBanco').value;
+            const objetoFiltro = document.getElementById('filtroObjeto').value;
+            const monedaFiltro = document.getElementById('filtroMoneda').value;
+            const tipoFiltro = document.getElementById('filtroTipo').value;
+
+            const filtrados = movimientosConfirmados.filter((m) => {
+                const matchTexto = m.motivo.toLowerCase().includes(texto) || m.banco.toLowerCase().includes(texto) || (m.objeto && m.objeto.toLowerCase().includes(texto));
+                const matchBanco = !bancoFiltro || m.banco === bancoFiltro;
+                const matchObjeto = !objetoFiltro || m.objeto === objetoFiltro;
+                const matchMoneda = !monedaFiltro || m.moneda === monedaFiltro;
+                const matchTipo = !tipoFiltro || m.tipo === tipoFiltro;
+                return matchTexto && matchBanco && matchObjeto && matchMoneda && matchTipo;
+            });
+
+            document.getElementById('recordCount').textContent = `${filtrados.length} de ${movimientosConfirmados.length} pólizas`;
+            filtrados.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+            // Quita de la selección cualquier id que ya no exista (por ejemplo, si se
+            // borró desde otra vista).
+            const idsExistentes = new Set(movimientosConfirmados.map(m => m.id));
+            seleccionDiario.forEach(id => { if (!idsExistentes.has(id)) seleccionDiario.delete(id); });
+
+            if (filtrados.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding: 25px; color: #78909c;">No se encontraron pólizas registradas con los filtros aplicados.</td></tr>`;
+                actualizarContadorSeleccionDiario();
+                return;
+            }
+
+            filtrados.forEach(m => {
+                const tr = document.createElement('tr');
+
+                const opcionesTipo = TIPOS_OPERACION.map(t =>
+                    `<option value="${t}" ${t === m.tipo ? 'selected' : ''}>${t}</option>`
+                ).join('');
+                const tipoSelector = `<select style="${estiloBadgeTipo(m.tipo)} font-size:9px; font-weight:700; text-transform:uppercase; padding:1px 3px; border-radius:2px; cursor:pointer;" onchange="cambiarTipoInline('${m.id}', this.value)" title="Cambiar tipo de operación">${opcionesTipo}</select>`;
+
+                let soporteHtml = '';
+                if (m.archivoData) {
+                    soporteHtml = `<span style="color:#0277bd; cursor:pointer; text-decoration:underline; font-weight:bold;" onclick="descargarSoporte('${m.id}')">📎 ${m.archivoNombre || 'Descargar Doc'}</span>`;
+                } else {
+                    soporteHtml = `<span style="color:#d84315; font-style:italic;" title="Justificación: ${m.motivoSinSoporte}">⚠️ Justif: ${(m.motivoSinSoporte || '').substring(0, 20)}...</span>`;
+                }
+
+                const motivoCelda = m.partidaDe
+                    ? `<span style="color:#512da8; font-weight:bold;" title="Partida dividida de la póliza ${m.partidaDe}">🔀 Partida</span> ${m.motivo}`
+                    : m.motivo;
+
+                const marcado = seleccionDiario.has(m.id) ? 'checked' : '';
+
+                tr.innerHTML = `
+                    <td class="text-center"><input type="checkbox" data-id="${m.id}" ${marcado} onclick="toggleSeleccionDiario('${m.id}', this.checked)"></td>
+                    <td>${formatearFechaVisual(m.fecha)}</td>
+                    <td><strong>${m.banco}</strong></td>
+                    <td><span class="badge badge-obj">${m.objeto || '-'}</span></td>
+                    <td>${tipoSelector}</td>
+                    <td class="text-center"><span class="badge ${m.moneda === 'MXN' ? 'badge-mxn' : 'badge-usd'}">${m.moneda}</span></td>
+                    <td class="text-right" style="font-family: Consolas, monospace; font-weight: bold; ${m.tipo === 'Egreso' || m.tipo === 'Comisión Bancaria' ? 'color:#c62828;' : 'color:#2e7d32;'}">
+                        $${m.monto.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                    <td title="${m.motivo}">${motivoCelda}</td>
+                    <td>${soporteHtml}</td>
+                    <td class="text-center">
+                        <button class="btn-sm" onclick="editarConfirmado('${m.id}')" title="Modificar">✏️</button>
+                        <button class="btn-sm" onclick="abrirModalDividir('${m.id}')" title="Dividir en varias partidas / beneficiarios">🔀</button>
+                        <button class="btn-sm btn-danger" onclick="eliminarConfirmado('${m.id}')" title="Eliminar">🗑️</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            // El checkbox "seleccionar todas" refleja si TODAS las filas visibles
+            // (con los filtros actuales) ya están marcadas.
+            const chkTodos = document.getElementById('chkSeleccionarTodosDiario');
+            if (chkTodos) chkTodos.checked = filtrados.every(m => seleccionDiario.has(m.id));
+
+            actualizarContadorSeleccionDiario();
+        }
+
+        function toggleSeleccionDiario(id, marcado) {
+            if (marcado) seleccionDiario.add(id);
+            else seleccionDiario.delete(id);
+            actualizarContadorSeleccionDiario();
+            const chkTodos = document.getElementById('chkSeleccionarTodosDiario');
+            if (chkTodos && !marcado) chkTodos.checked = false;
+        }
+
+        function toggleSeleccionarTodosDiario(marcarTodo) {
+            // Solo afecta a las filas actualmente visibles según los filtros aplicados.
+            document.querySelectorAll('#gridDiarioBody input[type="checkbox"][data-id]').forEach(chk => {
+                chk.checked = marcarTodo;
+                const id = chk.getAttribute('data-id');
+                if (marcarTodo) seleccionDiario.add(id); else seleccionDiario.delete(id);
+            });
+            actualizarContadorSeleccionDiario();
+        }
+
+        function actualizarContadorSeleccionDiario() {
+            const el = document.getElementById('contadorSeleccionDiario');
+            if (!el) return;
+            el.textContent = seleccionDiario.size > 0 ? `${seleccionDiario.size} seleccionada(s)` : '';
+        }
+
+        function eliminarSeleccionadosDiario() {
+            if (seleccionDiario.size === 0) {
+                alert('No hay ninguna póliza seleccionada. Marca el checkbox de las filas que quieras borrar (o el de la cabecera para seleccionar todas las visibles).');
+                return;
+            }
+            const cantidad = seleccionDiario.size;
+            if (!confirm(`¿Eliminar ${cantidad} póliza(s) seleccionada(s)? Esta acción no se puede deshacer.`)) return;
+
+            movimientosConfirmados = movimientosConfirmados.filter(m => !seleccionDiario.has(m.id));
+            seleccionDiario.clear();
+            persistirTodo();
+            renderizarTodo();
+            alert(`✅ Se eliminaron ${cantidad} póliza(s).`);
+        }
+
+        // Colores tipo "badge" para el selector inline de Tipo en el Diario.
+        function estiloBadgeTipo(tipo) {
+            if (tipo === 'Ingreso' || tipo === 'Intereses') return 'background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7;';
+            if (tipo === 'Egreso') return 'background:#ffebee; color:#c62828; border:1px solid #ef9a9a;';
+            if (tipo === 'Comisión Bancaria') return 'background:#fff3e0; color:#e65100; border:1px solid #ffcc80;';
+            return 'background:#e1f5fe; color:#0277bd; border:1px solid #81d4fa;'; // Traspaso
+        }
+
+        // Cambia el tipo de una póliza directamente desde el Diario, sin abrir ningún modal.
+        function cambiarTipoInline(id, nuevoTipo) {
+            const m = movimientosConfirmados.find(x => x.id === id);
+            if (!m) return;
+            m.tipo = nuevoTipo;
+            persistirTodo();
+            renderizarTodo();
+        }
+
+        function descargarSoporte(id) {
+            const m = movimientosConfirmados.find(x => x.id === id);
+            if (!m || !m.archivoData) return;
+            const a = document.createElement('a');
+            a.href = m.archivoData;
+            a.download = m.archivoNombre || `soporte_${m.id}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        function editarConfirmado(id) {
+            const m = movimientosConfirmados.find(x => x.id === id);
+            if (!m) return;
+
+            document.getElementById('manualEditId').value = m.id;
+            document.getElementById('manFecha').value = m.fecha;
+            document.getElementById('manMoneda').value = m.moneda;
+            document.getElementById('manBanco').value = m.banco;
+            document.getElementById('manObjeto').value = m.objeto;
+            document.getElementById('manTipo').value = m.tipo;
+            document.getElementById('manMonto').value = m.monto;
+            document.getElementById('manMotivo').value = m.motivo;
+            document.getElementById('manMotivoSinSoporte').value = m.motivoSinSoporte || '';
+            document.getElementById('manualFormTitle').textContent = `Modificando Póliza [${m.banco} - ${m.objeto}]`;
+
+            tempManArchivoBase64 = m.archivoData || null;
+            tempManArchivoNombre = m.archivoNombre || null;
+
+            validarSoporteManual();
+            cambiarPestana('manual');
+        }
+
+        function eliminarConfirmado(id) {
+            const m = movimientosConfirmados.find(x => x.id === id);
+            if (!m) return;
+            if (confirm(`¿Confirma la eliminación de la póliza de ${m.banco} (${m.objeto}) por $${m.monto.toFixed(2)} ${m.moneda}?`)) {
+                movimientosConfirmados = movimientosConfirmados.filter(x => x.id !== id);
+                persistirTodo();
+                renderizarTodo();
+            }
+        }
+
+        function renderizarGridBandeja() {
+            const tbody = document.getElementById('gridBandejaBody');
+            tbody.innerHTML = '';
+
+            if (movimientosBandeja.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding: 25px; color: #78909c;">
+                    No hay movimientos pendientes de confirmación.
+                </td></tr>`;
+                return;
+            }
+
+            movimientosBandeja.forEach((m) => {
+                const tr = document.createElement('tr');
+                if (m.seleccionado) tr.classList.add('selected-row');
+
+                let tipoBadge = `<span class="badge badge-traspaso">${m.tipo}</span>`;
+                if (m.tipo === 'Ingreso' || m.tipo === 'Intereses') tipoBadge = `<span class="badge badge-ingreso">${m.tipo}</span>`;
+                if (m.tipo === 'Egreso') tipoBadge = `<span class="badge badge-egreso">${m.tipo}</span>`;
+                if (m.tipo === 'Comisión Bancaria') tipoBadge = `<span class="badge badge-comision">${m.tipo}</span>`;
+
+                let soporteTexto = '';
+                if (m.archivoData) {
+                    soporteTexto = `<span style="color:#0277bd; font-weight:bold;">📎 ${m.archivoNombre}</span>`;
+                } else if (m.motivoSinSoporte) {
+                    soporteTexto = `<span style="color:#e65100;">⚠️ ${m.motivoSinSoporte.substring(0, 18)}...</span>`;
+                } else {
+                    soporteTexto = `<span style="color:#d32f2f; font-style:italic;">[Sin XML / Justif]</span>`;
+                }
+
+                tr.innerHTML = `
+                    <td class="text-center">
+                        <input type="checkbox" ${m.seleccionado ? 'checked' : ''} onchange="toggleFilaBandeja('${m.id}', this.checked)">
+                    </td>
+                    <td>${formatearFechaVisual(m.fecha)}</td>
+                    <td><strong>${m.banco}</strong></td>
+                    <td><span class="badge badge-obj">${m.objeto}</span></td>
+                    <td>${tipoBadge}</td>
+                    <td class="text-center"><span class="badge ${m.moneda === 'MXN' ? 'badge-mxn' : 'badge-usd'}">${m.moneda}</span></td>
+                    <td class="text-right" style="font-family: Consolas, monospace; font-weight: bold; ${m.tipo === 'Egreso' || m.tipo === 'Comisión Bancaria' ? 'color:#c62828;' : 'color:#2e7d32;'}">
+                        $${m.monto.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                    <td title="${m.motivo}">${m.motivo}</td>
+                    <td>${soporteTexto}</td>
+                    <td class="text-center">
+                        <button class="btn-sm btn-primary" onclick="abrirModalRevision('${m.id}')" title="Revisar / Cargar XML">🔍 Revisar</button>
+                        <button class="btn-sm btn-success" onclick="confirmarIndividual('${m.id}')" title="Confirmar">✅ OK</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function toggleTodosBandeja(master) {
+            movimientosBandeja.forEach(m => m.seleccionado = master.checked);
+            renderizarGridBandeja();
+        }
+
+        function toggleFilaBandeja(id, checked) {
+            const m = movimientosBandeja.find(x => x.id === id);
+            if (m) m.seleccionado = checked;
+            renderizarGridBandeja();
+        }
+
+        function abrirModalRevision(id) {
+            const m = movimientosBandeja.find(x => x.id === id);
+            if (!m) return;
+
+            document.getElementById('revId').value = m.id;
+            document.getElementById('revFecha').value = m.fecha;
+            document.getElementById('revMoneda').value = m.moneda;
+            document.getElementById('revBanco').value = m.banco;
+            document.getElementById('revObjeto').value = m.objeto;
+            document.getElementById('revTipo').value = m.tipo;
+            document.getElementById('revMonto').value = m.monto;
+            document.getElementById('revMotivo').value = m.motivo;
+            document.getElementById('revMotivoSinSoporte').value = m.motivoSinSoporte || '';
+            document.getElementById('revArchivo').value = '';
+
+            tempRevArchivoBase64 = m.archivoData || null;
+            tempRevArchivoNombre = m.archivoNombre || null;
+
+            validarSoporteRevision();
+            document.getElementById('modalRevision').style.display = 'flex';
+        }
+
+        function cerrarModalRevision() {
+            document.getElementById('modalRevision').style.display = 'none';
+        }
+
+        function validarSoporteRevision() {
+            const fileInput = document.getElementById('revArchivo');
+            const box = document.getElementById('revSinSoporteBox');
+
+            if (fileInput.files && fileInput.files[0]) {
+                const file = fileInput.files[0];
+                tempRevArchivoNombre = file.name;
+                const r = new FileReader();
+                r.onload = function(e) { tempRevArchivoBase64 = e.target.result; };
+                r.readAsDataURL(file);
+                box.style.display = 'none';
+            } else if (tempRevArchivoBase64) {
+                box.style.display = 'none';
+            } else {
+                box.style.display = 'flex';
+            }
+        }
+
+        function actualizarDatosModal(id) {
+            const m = movimientosBandeja.find(x => x.id === id);
+            if (!m) return null;
+
+            m.fecha = document.getElementById('revFecha').value;
+            m.moneda = document.getElementById('revMoneda').value;
+            m.banco = document.getElementById('revBanco').value;
+            m.objeto = document.getElementById('revObjeto').value;
+            m.tipo = document.getElementById('revTipo').value;
+            m.monto = parseFloat(document.getElementById('revMonto').value) || 0;
+            m.motivo = document.getElementById('revMotivo').value.trim();
+            m.archivoNombre = tempRevArchivoNombre;
+            m.archivoData = tempRevArchivoBase64;
+            m.motivoSinSoporte = tempRevArchivoBase64 ? '' : document.getElementById('revMotivoSinSoporte').value.trim();
+            return m;
+        }
+
+        function guardarCambiosEnBandeja() {
+            const id = document.getElementById('revId').value;
+            actualizarDatosModal(id);
+            persistirTodo();
+            cerrarModalRevision();
+            renderizarGridBandeja();
+        }
+
+        function guardarYConfirmarEnModal() {
+            const id = document.getElementById('revId').value;
+            const m = actualizarDatosModal(id);
+
+            if (!m.archivoData && !m.motivoSinSoporte) {
+                alert('Debe adjuntar un comprobante XML/PDF o registrar la justificación.');
+                return;
+            }
+
+            movimientosConfirmados.push(m);
+            movimientosBandeja = movimientosBandeja.filter(x => x.id !== id);
+
+            persistirTodo();
+            cerrarModalRevision();
+            renderizarTodo();
+        }
+
+        function confirmarIndividual(id) {
+            const idx = movimientosBandeja.findIndex(x => x.id === id);
+            if (idx === -1) return;
+            const m = movimientosBandeja[idx];
+
+            if (!m.archivoData && !m.motivoSinSoporte) {
+                abrirModalRevision(id);
+                alert('Este movimiento requiere adjuntar XML/PDF o registrar la justificación.');
+                return;
+            }
+
+            movimientosConfirmados.push(m);
+            movimientosBandeja.splice(idx, 1);
+            persistirTodo();
+            renderizarTodo();
+        }
+
+        function confirmarSeleccionados() {
+            const seleccionados = movimientosBandeja.filter(m => m.seleccionado);
+            if (seleccionados.length === 0) {
+                alert('No hay movimientos seleccionados para confirmar.');
+                return;
+            }
+
+            seleccionados.forEach(m => {
+                if (!m.archivoData && !m.motivoSinSoporte) {
+                    m.motivoSinSoporte = 'Validado contra extracto bancario';
+                }
+            });
+
+            movimientosConfirmados = movimientosConfirmados.concat(seleccionados);
+            movimientosBandeja = movimientosBandeja.filter(m => !m.seleccionado);
+
+            persistirTodo();
+            renderizarTodo();
+            alert(`Se confirmaron exitosamente ${seleccionados.length} pólizas.`);
+            cambiarPestana('diario');
+        }
+
+        function descartarSeleccionados() {
+            const count = movimientosBandeja.filter(m => m.seleccionado).length;
+            if (count === 0) return;
+            if (confirm(`¿Confirma el descarte de ${count} movimientos de la bandeja?`)) {
+                movimientosBandeja = movimientosBandeja.filter(m => !m.seleccionado);
+                persistirTodo();
+                renderizarTodo();
+            }
+        }
+
+        function validarSoporteManual() {
+            const fileInput = document.getElementById('manArchivo');
+            const box = document.getElementById('manSinSoporteBox');
+            const motivoSin = document.getElementById('manMotivoSinSoporte');
+
+            if (fileInput.files && fileInput.files[0]) {
+                const file = fileInput.files[0];
+                tempManArchivoNombre = file.name;
+                const r = new FileReader();
+                r.onload = function(e) { tempManArchivoBase64 = e.target.result; };
+                r.readAsDataURL(file);
+                box.style.display = 'none';
+                motivoSin.required = false;
+            } else {
+                tempManArchivoBase64 = null;
+                tempManArchivoNombre = null;
+                box.style.display = 'flex';
+                motivoSin.required = true;
+            }
+        }
+
+        function guardarMovimientoManual(e) {
+            e.preventDefault();
+            const editId = document.getElementById('manualEditId').value;
+            const fecha = document.getElementById('manFecha').value;
+            const moneda = document.getElementById('manMoneda').value;
+            const banco = document.getElementById('manBanco').value;
+            const objeto = document.getElementById('manObjeto').value;
+            const tipo = document.getElementById('manTipo').value;
+            const monto = parseFloat(document.getElementById('manMonto').value);
+            const motivo = document.getElementById('manMotivo').value.trim();
+            const motivoSinSoporte = document.getElementById('manMotivoSinSoporte').value.trim();
+
+            if (!monto || monto <= 0) {
+                alert('Ingrese un importe válido.');
+                return;
+            }
+
+            let docData = tempManArchivoBase64;
+            let docNombre = tempManArchivoNombre;
+
+            if (editId) {
+                const previo = movimientosConfirmados.find(x => x.id === editId);
+                if (previo && !docData && previo.archivoData && !motivoSinSoporte) {
+                    docData = previo.archivoData;
+                    docNombre = previo.archivoNombre;
+                }
+            }
+
+            if (!docData && !motivoSinSoporte) {
+                alert('Debe adjuntar un soporte XML/PDF o redactar la justificación.');
+                return;
+            }
+
+            const registro = {
+                id: editId || 'POL-' + Date.now(),
+                fecha, moneda, banco, objeto, tipo, monto, motivo,
+                archivoNombre: docNombre,
+                archivoData: docData,
+                motivoSinSoporte: docData ? '' : motivoSinSoporte
+            };
+
+            if (editId) {
+                const idx = movimientosConfirmados.findIndex(x => x.id === editId);
+                if (idx !== -1) movimientosConfirmados[idx] = registro;
+            } else {
+                movimientosConfirmados.push(registro);
+            }
+
+            persistirTodo();
+            cancelarManual();
+            renderizarTodo();
+            cambiarPestana('diario');
+        }
+
+        function cancelarManual() {
+            document.getElementById('formManual').reset();
+            document.getElementById('manualEditId').value = '';
+            document.getElementById('manFecha').valueAsDate = new Date();
+            document.getElementById('manualFormTitle').textContent = 'Registro Manual de Movimiento';
+            tempManArchivoBase64 = null;
+            tempManArchivoNombre = null;
+            validarSoporteManual();
+        }
+
+        function abrirModalBanco() {
+            document.getElementById('nuevoBancoNombre').value = '';
+            document.getElementById('modalBanco').style.display = 'flex';
+            document.getElementById('nuevoBancoNombre').focus();
+        }
+
+        function cerrarModalBanco() {
+            document.getElementById('modalBanco').style.display = 'none';
+        }
+
+        function guardarNuevoBanco() {
+            const nombre = document.getElementById('nuevoBancoNombre').value.trim();
+            if (!nombre) return;
+            if (bancos.map(b => b.toLowerCase()).includes(nombre.toLowerCase())) {
+                alert('El banco ya existe en el catálogo.');
+                return;
+            }
+            bancos.push(nombre);
+            persistirTodo();
+            cargarCombos();
+            document.getElementById('autoBanco').value = nombre;
+            document.getElementById('manBanco').value = nombre;
+            cerrarModalBanco();
+        }
+
+        function abrirModalObjeto() {
+            document.getElementById('nuevoObjetoNombre').value = '';
+            document.getElementById('modalObjeto').style.display = 'flex';
+            document.getElementById('nuevoObjetoNombre').focus();
+        }
+
+        function cerrarModalObjeto() {
+            document.getElementById('modalObjeto').style.display = 'none';
+        }
+
+        function guardarNuevoObjeto() {
+            const nombre = document.getElementById('nuevoObjetoNombre').value.trim();
+            if (!nombre) return;
+            if (objetos.map(o => o.toLowerCase()).includes(nombre.toLowerCase())) {
+                alert('El objeto de negocio ya existe en el catálogo.');
+                return;
+            }
+            objetos.push(nombre);
+            persistirTodo();
+            cargarCombos();
+            document.getElementById('autoObjeto').value = nombre;
+            document.getElementById('manObjeto').value = nombre;
+            cerrarModalObjeto();
+        }
+
+        function formatearFechaVisual(f) {
+            if (!f) return '';
+            const p = f.split('-');
+            return `${p[2]}/${p[1]}/${p[0]}`;
+        }
+
+        // ==================== DIVIDIR PÓLIZA EN VARIAS PARTIDAS ====================
+        let dividirPartidas = [];
+        let dividirMovimientoOriginal = null;
+
+        function abrirModalDividir(id) {
+            const m = movimientosConfirmados.find(x => x.id === id);
+            if (!m) return;
+
+            dividirMovimientoOriginal = m;
+            document.getElementById('dividirId').value = m.id;
+
+            document.getElementById('dividirResumenOriginal').innerHTML = `
+                <strong>${formatearFechaVisual(m.fecha)} · ${m.banco} · ${m.objeto || '-'}</strong><br>
+                ${m.tipo} — <strong>$${m.monto.toLocaleString('es-MX', {minimumFractionDigits:2})} ${m.moneda}</strong><br>
+                <span style="color:#546e7a;">${m.motivo}</span>
+            `;
+
+            dividirPartidas = [
+                { beneficiario: '', monto: '' },
+                { beneficiario: '', monto: '' }
+            ];
+
+            renderizarPartidasSplit();
+            document.getElementById('modalDividir').style.display = 'flex';
+        }
+
+        function cerrarModalDividir() {
+            document.getElementById('modalDividir').style.display = 'none';
+            dividirMovimientoOriginal = null;
+            dividirPartidas = [];
+        }
+
+        function renderizarPartidasSplit() {
+            const container = document.getElementById('dividirPartidasContainer');
+            container.innerHTML = '';
+
+            dividirPartidas.forEach((p, idx) => {
+                const row = document.createElement('div');
+                row.style.cssText = 'display:grid; grid-template-columns: 1fr 130px 26px; gap:6px; align-items:center;';
+                row.innerHTML = `
+                    <input type="text" placeholder="Beneficiario / concepto" value="${(p.beneficiario || '').replace(/"/g, '&quot;')}" oninput="actualizarPartidaSplit(${idx}, 'beneficiario', this.value)">
+                    <input type="number" step="0.01" placeholder="0.00" value="${p.monto}" style="text-align:right; font-family:Consolas, monospace; font-weight:bold;" oninput="actualizarPartidaSplit(${idx}, 'monto', this.value)">
+                    <button type="button" class="btn-sm btn-danger" onclick="eliminarPartidaSplit(${idx})" title="Quitar partida">✖</button>
+                `;
+                container.appendChild(row);
+            });
+
+            actualizarTotalesSplit();
+        }
+
+        function actualizarPartidaSplit(idx, campo, valor) {
+            dividirPartidas[idx][campo] = valor;
+            actualizarTotalesSplit();
+        }
+
+        function agregarPartidaSplit() {
+            dividirPartidas.push({ beneficiario: '', monto: '' });
+            renderizarPartidasSplit();
+        }
+
+        function eliminarPartidaSplit(idx) {
+            dividirPartidas.splice(idx, 1);
+            renderizarPartidasSplit();
+        }
+
+        function actualizarTotalesSplit() {
+            const box = document.getElementById('dividirTotalesBox');
+            if (!dividirMovimientoOriginal || !box) return;
+
+            const sumaPartidas = dividirPartidas.reduce((acc, p) => acc + (parseFloat(p.monto) || 0), 0);
+            const total = dividirMovimientoOriginal.monto;
+            const diferencia = total - sumaPartidas;
+
+            let color = '#e65100';
+            let mensaje = `Falta repartir: $${diferencia.toLocaleString('es-MX', {minimumFractionDigits:2})}`;
+            if (diferencia < -0.005) {
+                mensaje = `⚠️ Se pasó por: $${Math.abs(diferencia).toLocaleString('es-MX', {minimumFractionDigits:2})}`;
+                color = '#c62828';
+            } else if (Math.abs(diferencia) < 0.005) {
+                color = '#2e7d32';
+                mensaje = '✅ La suma coincide exactamente con el importe original.';
+            }
+
+            box.style.color = color;
+            box.innerHTML = `
+                Total original: $${total.toLocaleString('es-MX', {minimumFractionDigits:2})} ${dividirMovimientoOriginal.moneda}<br>
+                Suma de partidas: $${sumaPartidas.toLocaleString('es-MX', {minimumFractionDigits:2})}<br>
+                ${mensaje}
+            `;
+        }
+
+        function guardarDividirPoliza() {
+            if (!dividirMovimientoOriginal) return;
+            const original = dividirMovimientoOriginal;
+
+            const partidasValidas = dividirPartidas.filter(p => p.beneficiario.trim() && parseFloat(p.monto) > 0);
+
+            if (partidasValidas.length < 2) {
+                alert('Ingrese al menos 2 partidas con beneficiario/concepto e importe para poder dividir la póliza.');
+                return;
+            }
+
+            const sumaPartidas = partidasValidas.reduce((acc, p) => acc + parseFloat(p.monto), 0);
+            const diferencia = Math.abs(original.monto - sumaPartidas);
+
+            if (diferencia > 0.01) {
+                alert(`La suma de las partidas ($${sumaPartidas.toLocaleString('es-MX', {minimumFractionDigits:2})}) no coincide con el importe original ($${original.monto.toLocaleString('es-MX', {minimumFractionDigits:2})}). Ajuste los montos antes de confirmar.`);
+                return;
+            }
+
+            // Se elimina la póliza original y se sustituye por una póliza por cada partida,
+            // conservando fecha/banco/objeto/moneda/tipo y el mismo soporte documental.
+            movimientosConfirmados = movimientosConfirmados.filter(x => x.id !== original.id);
+
+            partidasValidas.forEach((p, i) => {
+                movimientosConfirmados.push({
+                    id: original.id + '-P' + (i + 1) + '-' + Math.random().toString(36).substr(2, 4),
+                    fecha: original.fecha,
+                    banco: original.banco,
+                    objeto: original.objeto,
+                    moneda: original.moneda,
+                    tipo: original.tipo,
+                    monto: parseFloat(p.monto),
+                    motivo: `${original.motivo} — ${p.beneficiario.trim()}`,
+                    saldoFinal: original.saldoFinal,
+                    archivoNombre: original.archivoNombre,
+                    archivoData: original.archivoData,
+                    motivoSinSoporte: original.motivoSinSoporte,
+                    partidaDe: original.id,
+                    beneficiario: p.beneficiario.trim()
+                });
+            });
+
+            persistirTodo();
+            renderizarTodo();
+            cerrarModalDividir();
+            alert(`✅ Póliza dividida en ${partidasValidas.length} partidas.`);
+        }
+
+        // ==================== GENERAR Y DESCARGAR HTML DE RESPALDO ====================
+        function generarYDescargarHTML() {
+            if (movimientosConfirmados.length === 0 && movimientosBandeja.length === 0) {
+                if (!confirm('Todavía no hay pólizas registradas. ¿Aun así desea descargar el HTML?')) return;
+            }
+
+            // Cierra cualquier modal abierto antes de capturar la página, para que el
+            // respaldo no se abra mostrando un modal encima.
+            ['modalRevision', 'modalBanco', 'modalObjeto', 'modalDividir'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = 'none';
+            });
+
+            const snapshot = {
+                bancos: bancos,
+                objetos: objetos,
+                movimientosConfirmados: movimientosConfirmados,
+                movimientosBandeja: movimientosBandeja,
+                generadoEl: new Date().toISOString()
+            };
+
+            // JSON con < escapado para que no se confunda con el cierre de la etiqueta <script>.
+            const dataJson = JSON.stringify(snapshot).replace(/</g, '\\u003c');
+
+            let htmlCompleto = "<!DOCTYPE html>\n" + document.documentElement.outerHTML;
+            htmlCompleto = htmlCompleto.replace(
+                /<script type="application\/json" id="cpqSnapshotData">[\s\S]*?<\/script>/,
+                '<script type="application/json" id="cpqSnapshotData">' + dataJson + '<\/script>'
+            );
+
+            const blob = new Blob([htmlCompleto], { type: 'text/html;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const fechaStr = new Date().toISOString().slice(0, 10);
+            const horaStr = new Date().toTimeString().slice(0, 5).replace(':', 'h');
+            a.download = `CONTPAQi_Bancos_Respaldo_${fechaStr}_${horaStr}.html`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            alert(`✅ Se descargó el respaldo con ${movimientosConfirmados.length} pólizas confirmadas y ${movimientosBandeja.length} pendientes.\n\nPuede abrir ese archivo en cualquier momento: se verá exactamente igual, con toda la información ya cargada, y podrá seguir trabajando en él normalmente.`);
+        }
+
+        function exportarCSV() {
+            if (movimientosConfirmados.length === 0) {
+                alert('No hay pólizas registradas para exportar.');
+                return;
+            }
+
+            let csv = "\uFEFFID,Fecha,Banco,Objeto_Negocio,Tipo,Moneda,Importe,Concepto_Observaciones,Soporte,Justificacion_Sin_Soporte\r\n";
+            movimientosConfirmados.forEach(m => {
+                const tieneSoporte = m.archivoNombre ? `Si (${m.archivoNombre})` : 'No';
+                csv += `${m.id},"${m.fecha}","${m.banco}","${m.objeto || ''}","${m.tipo}","${m.moneda}",${m.monto.toFixed(2)},"${(m.motivo || '').replace(/"/g, '""')}","${tieneSoporte}","${(m.motivoSinSoporte || '').replace(/"/g, '""')}"\r\n`;
+            });
+
+            const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `Polizas_Bancarias_${new Date().toISOString().slice(0,10)}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+    </script>
+</body>
+</html>
